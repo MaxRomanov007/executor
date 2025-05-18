@@ -1,12 +1,15 @@
 package main
 
 import (
+	"context"
+	"executor/internal/app"
 	"executor/internal/config"
 	"executor/internal/lib/api/logger/handlers/slogpretty"
-	"fmt"
 	"github.com/fatih/color"
 	"log/slog"
 	"os"
+	"os/signal"
+	"syscall"
 )
 
 const (
@@ -16,13 +19,31 @@ const (
 )
 
 func main() {
+	ctx := context.Background()
 	cfg := config.MustLoad()
-
 	log := setupLogger(cfg.Env)
 
-	log.Info("starting server")
+	application := app.New(log, cfg)
 
-	fmt.Println(cfg)
+	log.Info("starting server...")
+	go application.Executor.MustRun()
+
+	log.Info("server running")
+
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, syscall.SIGTERM, syscall.SIGINT)
+
+	sign := <-stop
+
+	log.Info("stopping server", slog.String("signal", sign.String()))
+
+	if err := application.Executor.Stop(ctx); err != nil {
+		log.Error("failed stop server")
+
+		panic(err)
+	}
+
+	log.Info("server stopped")
 }
 
 func setupLogger(env string) *slog.Logger {
